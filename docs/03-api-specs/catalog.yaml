@@ -1,0 +1,64 @@
+openapi: 3.0.0
+info:
+  title: Catalog API
+  version: v1
+paths:
+  /products:
+    get:
+      summary: Get a list of products
+      parameters:
+        - in: query
+          name: tagIds
+          schema:
+            type: array
+            items:
+              type: string
+            description: List of tag IDs to filter products by. Products must have all of the specified tags.
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+  /products/{productId}:
+    get:
+      summary: Get a product by ID
+      parameters:
+        - in: path
+          name: productId
+          required: true
+          schema:
+            type: string
+          description: ID of the product to retrieve
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier of the product
+        name:
+          type: string
+          description: Name of the product
+        description:
+          type: string
+          description: Description of the product
+        price:
+          type: number
+          description: Price of the product
+        tags:
+          type: array
+          items:
+            type: string
+          description: List of tag IDs associated with the product
