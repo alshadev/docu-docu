@@ -25,7 +25,7 @@ on:
 
 env:
   GCS_BUCKET: ${{ vars.GCS_BUCKET_NAME }}            # e.g. "my-project-brain-docs"
-  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}         # e.g. "my-gcp-project"
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}          # e.g. "my-gcp-project"
   GCP_LOCATION: ${{ vars.GCP_LOCATION || 'us-central1' }}
   # Only needed if you want automatic re-import after sync
   DATASTORE_ID: ${{ vars.VERTEX_AI_SEARCH_DATASTORE_ID }}  # e.g. "brain-docs-datastore"
@@ -64,20 +64,46 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      # ── 4. Sync docs/ to GCS bucket ──
+      # ── 4. Convert docs to supported formats ──
+      # Vertex AI Search only supports: pdf, html, txt, docx, pptx, xlsx
+      # Convert .md and .yaml/.yml files to .txt before uploading
+      - name: Convert docs to supported formats
+        run: |
+          echo "🔄 Converting docs to Vertex AI Search compatible formats..."
+          mkdir -p converted_docs
+          cp -r docs/* converted_docs/
+
+          # Rename .md files to .txt
+          find converted_docs -name "*.md" -exec bash -c 'mv "$0" "${0%.md}.txt"' {} \;
+
+          # Convert .yaml/.yml files to .txt with a header for context
+          find converted_docs \( -name "*.yaml" -o -name "*.yml" \) | while read f; do
+            txt_path="${f%.*}.txt"
+            {
+              echo "# Source: ${f##*/}"
+              echo "# Format: YAML"
+              echo "---"
+              cat "$f"
+            } > "$txt_path"
+            rm "$f"
+          done
+
+          echo "✅ Converted files:"
+          find converted_docs -type f | head -50
+
+      # ── 5. Sync converted docs to GCS bucket ──
       - name: Sync docs to GCS
         run: |
-          echo "📄 Syncing docs/ to gs://$GCS_BUCKET/docs/"
-          gsutil -m rsync -r -d docs/ gs://$GCS_BUCKET/docs/
+          echo "📄 Syncing converted docs to gs://$GCS_BUCKET/docs/"
+          gsutil -m rsync -r -d converted_docs/ gs://$GCS_BUCKET/docs/
           echo "✅ Sync complete"
 
-      # ── 5. (Optional) Trigger Vertex AI Search datastore re-import ──
+      # ── 6. (Optional) Trigger Vertex AI Search datastore re-import ──
       - name: Trigger datastore import
         if: env.DATASTORE_ID != ''
         run: |
           echo "🔄 Triggering Vertex AI Search datastore import..."
 
-          # Import documents from GCS into the datastore
           curl -s -X POST \
             -H "Authorization: Bearer $(gcloud auth print-access-token)" \
             -H "Content-Type: application/json" \
