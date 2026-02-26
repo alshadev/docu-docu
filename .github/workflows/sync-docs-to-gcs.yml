@@ -64,14 +64,33 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      # ── 4. Convert docs to supported formats ──
-      # Vertex AI Search only supports: pdf, html, txt, docx, pptx, xlsx
-      # Convert .md and .yaml/.yml files to .txt before uploading
-      - name: Convert docs to supported formats
+      # ── 4. Filter & convert docs to supported formats ──
+      # Only sync RAG-relevant content: domain docs (entities, use-cases) and API specs.
+      # Skips intro pages, blog posts, tutorials, etc. that add noise to the search index.
+      #
+      # Edit SYNC_PATHS below to match your Docusaurus folder structure.
+      - name: Filter and convert docs
+        env:
+          # Folders inside docs/ that contain RAG-relevant content.
+          # Separate multiple paths with spaces. Glob patterns are supported.
+          # Examples:
+          #   "02-domains 03-api-specs"          — two specific folders
+          #   "02-domains 03-api-specs 04-arch"  — three folders
+          SYNC_PATHS: "02-domains 03-api-specs"
         run: |
-          echo "🔄 Converting docs to Vertex AI Search compatible formats..."
+          echo "🔄 Filtering and converting docs for Vertex AI Search..."
           mkdir -p converted_docs
-          cp -r docs/* converted_docs/
+
+          # Copy only the specified folders
+          for path in $SYNC_PATHS; do
+            if [ -d "docs/$path" ]; then
+              echo "  📁 Including: docs/$path"
+              mkdir -p "converted_docs/$path"
+              cp -r "docs/$path/." "converted_docs/$path/"
+            else
+              echo "  ⚠️ Skipping (not found): docs/$path"
+            fi
+          done
 
           # Rename .md files to .txt
           find converted_docs -name "*.md" -exec bash -c 'mv "$0" "${0%.md}.txt"' {} \;
@@ -88,7 +107,8 @@ jobs:
             rm "$f"
           done
 
-          echo "✅ Converted files:"
+          FILE_COUNT=$(find converted_docs -type f | wc -l)
+          echo "✅ $FILE_COUNT files ready for sync:"
           find converted_docs -type f | head -50
 
       # ── 5. Sync converted docs to GCS bucket ──
