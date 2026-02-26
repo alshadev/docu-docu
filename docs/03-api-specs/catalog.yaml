@@ -1,0 +1,35 @@
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the product
+          example: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+        name:
+          type: string
+          description: Name of the product
+          example: "Awesome T-Shirt"
+        description:
+          type: string
+          description: Description of the product
+          example: "A must-have T-Shirt"
+        price:
+          type: number
+          format: float
+          description: Price of the product
+          example: 29.99
+        tags:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: List of tag IDs associated with the product
+          example: ["d4c3b2a1-f6e5-0987-4321-1234567890ab", "b2a1c3d4-e5f6-7890-1234-567890abcdef"]
+      required:
+        - id
+        - name
+        - description
+        - price
