@@ -1,0 +1,92 @@
+# ──────────────────────────────────────────────────────────────
+# Sync Docusaurus docs to Google Cloud Storage
+# ──────────────────────────────────────────────────────────────
+# Copy this workflow into your DOCUSAURUS repository, not the Brain repo.
+# File path: .github/workflows/sync-docs-to-gcs.yml
+#
+# This pipeline:
+# 1. Triggers on every push to `main` (e.g., when Brain PRs are merged)
+# 2. Authenticates to GCP via Workload Identity Federation (recommended)
+#    or a Service Account key stored as a GitHub secret
+# 3. Syncs the `docs/` folder to a GCS bucket
+# 4. Optionally triggers a Vertex AI Search datastore re-import
+# ──────────────────────────────────────────────────────────────
+
+name: Sync Docs to GCS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+
+  # Allow manual trigger for initial sync or re-sync
+  workflow_dispatch:
+
+env:
+  GCS_BUCKET: ${{ vars.GCS_BUCKET_NAME }}            # e.g. "my-project-brain-docs"
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}         # e.g. "my-gcp-project"
+  GCP_LOCATION: ${{ vars.GCP_LOCATION || 'us-central1' }}
+  # Only needed if you want automatic re-import after sync
+  DATASTORE_ID: ${{ vars.VERTEX_AI_SEARCH_DATASTORE_ID }}  # e.g. "brain-docs-datastore"
+
+jobs:
+  sync:
+    name: Sync docs/ to Cloud Storage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # Required for Workload Identity Federation
+
+    steps:
+      # ── 1. Checkout repository ──
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Authenticate to Google Cloud ──
+      # Option A: Workload Identity Federation (recommended — no key file needed)
+      # - name: Authenticate to GCP (Workload Identity Federation)
+      #   id: auth
+      #   uses: google-github-actions/auth@v2
+      #   with:
+      #     workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      #     service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      # Option B: If you prefer Service Account Key, comment out Option A above
+      #           and uncomment the block below:
+      - name: Authenticate to GCP (Service Account Key)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_JSON }}
+
+      # ── 3. Set up gcloud CLI ──
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # ── 4. Sync docs/ to GCS bucket ──
+      - name: Sync docs to GCS
+        run: |
+          echo "📄 Syncing docs/ to gs://$GCS_BUCKET/docs/"
+          gsutil -m rsync -r -d docs/ gs://$GCS_BUCKET/docs/
+          echo "✅ Sync complete"
+
+      # ── 5. (Optional) Trigger Vertex AI Search datastore re-import ──
+      - name: Trigger datastore import
+        if: env.DATASTORE_ID != ''
+        run: |
+          echo "🔄 Triggering Vertex AI Search datastore import..."
+
+          # Import documents from GCS into the datastore
+          curl -s -X POST \
+            -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+            -H "Content-Type: application/json" \
+            "https://discoveryengine.googleapis.com/v1/projects/$GCP_PROJECT_ID/locations/$GCP_LOCATION/collections/default_collection/dataStores/$DATASTORE_ID/branches/default_branch/documents:import" \
+            -d '{
+              "gcsSource": {
+                "inputUris": ["gs://'"$GCS_BUCKET"'/docs/**"]
+              },
+              "reconciliationMode": "FULL"
+            }'
+
+          echo "✅ Import triggered (runs asynchronously)"
